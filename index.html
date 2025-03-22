@@ -1,62 +1,250 @@
-<html>
-<body>
-    <script src="https://js.puter.com/v2/"></script>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OCR File Upload</title>
     
-    <div>
-        <h3>OCR File Upload</h3>
-        <input type="file" id="image-input" accept="image/*">
-        <button onclick="processImage()">Process Image</button>
-        
-        <div style="margin-top: 20px;">
-            <h4>Preview:</h4>
-            <img id="preview" style="max-width: 500px; display: none;">
-        </div>
-        
-        <div style="margin-top: 20px;">
-            <h4>Extracted Text:</h4>
-            <div id="result" style="white-space: pre-wrap;"></div>
-        </div>
+    <!-- FontAwesome for Icons -->
+    <script src="https://kit.fontawesome.com/a076d05399.js" crossorigin="anonymous"></script>
+
+    <!-- Puter.js for OCR -->
+    <script src="https://js.puter.com/v2/"></script>
+
+    <style>
+        body {
+            font-family: 'Arial', sans-serif;
+            text-align: center;
+            background-color: #f4f4f4;
+            color: #333;
+            margin: 20px;
+        }
+        h3 {
+            color: #007BFF;
+            font-size: 24px;
+        }
+        #drop-area {
+            border: 2px dashed #007BFF;
+            border-radius: 10px;
+            padding: 30px;
+            cursor: pointer;
+            background: #fff;
+            transition: 0.3s;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            width: 90%;
+            max-width: 500px;
+            margin: auto;
+        }
+        #drop-area:hover {
+            background-color: #e3f2fd;
+        }
+        .icon {
+            font-size: 50px;
+            color: #007BFF;
+        }
+        img, video {
+            max-width: 100%;
+            display: none;
+            margin-top: 10px;
+            border-radius: 5px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+        }
+        textarea {
+            width: 90%;
+            height: 120px;
+            margin-top: 10px;
+            padding: 10px;
+            font-size: 16px;
+            border-radius: 5px;
+            border: 1px solid #ccc;
+            outline: none;
+            resize: none;
+        }
+        .buttons {
+            margin-top: 20px;
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 10px;
+        }
+        .button {
+            background: #007BFF;
+            color: #fff;
+            border: none;
+            padding: 12px 20px;
+            font-size: 16px;
+            cursor: pointer;
+            border-radius: 5px;
+            transition: 0.3s;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        .button:hover {
+            background: #0056b3;
+        }
+        .loading {
+            display: none;
+            font-size: 20px;
+            margin-top: 15px;
+            color: #007BFF;
+        }
+        @media (max-width: 600px) {
+            body {
+                font-size: 14px;
+            }
+            #drop-area {
+                width: 95%;
+            }
+            .button {
+                padding: 10px;
+                font-size: 14px;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <h3><i class="fas fa-file-upload"></i> OCR File Upload</h3>
+
+    <div id="drop-area">
+        <i class="fas fa-cloud-upload-alt icon"></i>
+        <p>Drag & Drop an image here OR</p>
+        <input type="file" id="image-input" accept="image/*" style="display: none;">
+        <button class="button" onclick="document.getElementById('image-input').click()">
+            <i class="fas fa-folder-open"></i> Choose File
+        </button>
+        <button class="button" onclick="openCamera()">
+            <i class="fas fa-camera"></i> Use Camera
+        </button>
+    </div>
+
+    <h4>Live Camera:</h4>
+    <video id="camera-preview" autoplay playsinline style="display: none;"></video>
+    <button id="capture-btn" class="button" style="display: none;" onclick="captureImageFromCamera()">
+        <i class="fas fa-camera"></i> Capture Image
+    </button>
+
+    <h4>Preview:</h4>
+    <img id="preview">
+
+    <h4>Extracted Text:</h4>
+    <textarea id="result" readonly></textarea>
+
+    <div class="loading" id="loading">
+        <i class="fas fa-spinner fa-spin"></i> Processing...
+    </div>
+
+    <div class="buttons">
+        <button class="button" onclick="copyText()">
+            <i class="fas fa-copy"></i> Copy Text
+        </button>
+        <button class="button" onclick="readText()">
+            <i class="fas fa-volume-up"></i> Read Aloud
+        </button>
     </div>
 
     <script>
         const imageInput = document.getElementById('image-input');
         const preview = document.getElementById('preview');
         const result = document.getElementById('result');
+        const dropArea = document.getElementById('drop-area');
+        const loading = document.getElementById('loading');
+        const cameraPreview = document.getElementById('camera-preview');
+        const captureBtn = document.getElementById('capture-btn');
+        let videoStream = null;
 
-        imageInput.addEventListener('change', function(e) {
-            const file = e.target.files[0];
-            if (file) {
-                // Show image preview
-                preview.src = URL.createObjectURL(file);
-                preview.style.display = 'block';
-                result.textContent = ''; // Clear previous result
-            }
+        dropArea.addEventListener('dragover', (e) => e.preventDefault());
+        dropArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            imageInput.files = e.dataTransfer.files;
+            handleFile();
         });
 
-    async function processImage() {
-        const file = imageInput.files[0];
-        if (!file) {
-            alert('Please select an image first');
-            return;
+        imageInput.addEventListener('change', handleFile);
+
+        async function handleFile() {
+            const file = imageInput.files[0];
+            if (!file) return;
+
+            preview.src = URL.createObjectURL(file);
+            preview.style.display = 'block';
+            result.value = '';
+            loading.style.display = 'block';
+
+            try {
+                const dataUrl = await fileToDataUrl(file);
+                const text = await puter.ai.img2txt(dataUrl);
+                result.value = text || 'No text found in image';
+            } catch (error) {
+                result.value = 'Error: ' + error.message;
+            } finally {
+                loading.style.display = 'none';
+            }
         }
 
-        result.textContent = 'Processing image...';
-        
-        try {
-            // Convert file to data URL
-            const dataUrl = await new Promise((resolve) => {
+        function fileToDataUrl(file) {
+            return new Promise((resolve) => {
                 const reader = new FileReader();
                 reader.onload = () => resolve(reader.result);
                 reader.readAsDataURL(file);
             });
-            
-            // Now pass the data URL to img2txt
-            const text = await puter.ai.img2txt(dataUrl);
-            result.textContent = text || 'No text found in image';
-        } catch (error) {
-            result.textContent = 'Error: ' + error.message;
         }
-    }   
+
+        function copyText() {
+            result.select();
+            document.execCommand("copy");
+            alert("📋 Text copied!");
+        }
+
+        function readText() {
+            const speech = new SpeechSynthesisUtterance(result.value);
+            window.speechSynthesis.speak(speech);
+        }
+
+        async function openCamera() {
+            try {
+                videoStream = await navigator.mediaDevices.getUserMedia({ video: true });
+                cameraPreview.srcObject = videoStream;
+                cameraPreview.style.display = 'block';
+                captureBtn.style.display = 'block';
+            } catch (error) {
+                alert('Camera access denied: ' + error.message);
+            }
+        }
+
+        function captureImageFromCamera() {
+            const canvas = document.createElement('canvas');
+            canvas.width = cameraPreview.videoWidth;
+            canvas.height = cameraPreview.videoHeight;
+            canvas.getContext('2d').drawImage(cameraPreview, 0, 0);
+            
+            cameraPreview.style.display = 'none';
+            captureBtn.style.display = 'none';
+            if (videoStream) {
+                videoStream.getTracks().forEach(track => track.stop());
+            }
+
+            preview.src = canvas.toDataURL('image/png');
+            preview.style.display = 'block';
+            handleFileFromCanvas(canvas);
+        }
+
+        async function handleFileFromCanvas(canvas) {
+            loading.style.display = 'block';
+            try {
+                const text = await puter.ai.img2txt(canvas.toDataURL());
+                result.value = text || 'No text found';
+            } catch (error) {
+                result.value = 'Error: ' + error.message;
+            } finally {
+                loading.style.display = 'none';
+            }
+        }
     </script>
+
 </body>
 </html>
